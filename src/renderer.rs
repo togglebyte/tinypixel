@@ -1,16 +1,13 @@
 use std::mem::size_of;
-use std::ops::{Deref, DerefMut};
 
 use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize,
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::Window,
 };
 
-use crate::{texture, Pixel, PixelBuffer, ScreenSize, Viewport};
+use crate::{texture, Pixel, ScreenSize, Viewport};
 
 // -----------------------------------------------------------------------------
 //     - Vertex-
@@ -79,7 +76,6 @@ const INDICES: &[u16] = &[0, 2, 3, 0, 3, 1];
 //     - Renderer -
 // -----------------------------------------------------------------------------
 pub struct Renderer {
-    pixels: PixelBuffer,
     state: State,
 }
 
@@ -109,11 +105,8 @@ impl Renderer {
         self.state.resize(new_size);
     }
 
-    pub fn new(w: u32, h: u32, window: &Window) -> Self {
-        let pixel_count = (w * h) as usize;
-
+    pub fn new(window: &Window) -> Self {
         Self {
-            pixels: PixelBuffer::with_capacity(pixel_count),
             state: block_on(State::new(window)),
         }
     }
@@ -144,22 +137,6 @@ fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 }
 
 fn bind_group(device: &wgpu::Device, texture: &texture::Texture) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &bind_group_layout(&device),
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture.view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&texture.sampler),
-            },
-        ],
-        label: Some("Texture bind group"),
-    })
-}
-fn create_bind_group(device: &wgpu::Device, texture: &texture::Texture) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &bind_group_layout(&device),
         entries: &[
@@ -301,21 +278,7 @@ impl State {
         self.diffuse_bind_group = bind_group(&self.device, &texture);
         self.texture = texture;
 
-        let diffuse_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: self.texture.size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-            label: Some("omg textures!!!!"),
-        });
-
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
-    }
-
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        false
     }
 
     fn render(&mut self) {

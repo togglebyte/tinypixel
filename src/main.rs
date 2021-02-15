@@ -66,7 +66,7 @@ fn main() {
     let size = window.inner_size();
     eprintln!("{} | {}", size.width, size.height);
 
-    let mut game = Game {
+    let game = Game {
         viewport: Viewport::new(ScreenPos::zero(), ScreenSize::new(size.width, size.height)),
         pix_pos: ScreenPos::new(size.width / 2, size.height / 2),
         direction: None,

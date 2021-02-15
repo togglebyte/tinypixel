@@ -1,11 +1,8 @@
-use futures::executor::block_on;
-use wgpu::util::DeviceExt;
 use winit::{
-    dpi::PhysicalSize,
     event::Event as WinitEvent,
     event::*,
     event_loop::{ControlFlow, EventLoop as WinitEventLoop},
-    window::{Window, WindowBuilder},
+    window::Window,
 };
 
 use crate::ScreenSize;
@@ -24,20 +21,16 @@ pub trait EventLoop: 'static {
 }
 
 pub fn start<T: std::fmt::Debug>(mut el: impl EventLoop, window: Window, event_loop: WinitEventLoop<T>) {
-    let mut renderer = Renderer::new(
-        window.inner_size().width,
-        window.inner_size().height,
-        &window,
-    );
+    let mut renderer = Renderer::new(&window);
 
     event_loop.run(move |event, _, control_flow| {
         match event {
             WinitEvent::RedrawRequested(window_id) if window_id == window.id() => {
-                el.draw(&mut renderer);
+                renderer.render();
             }
             WinitEvent::MainEventsCleared => {
                 el.update();
-                renderer.render();
+                el.draw(&mut renderer);
                 window.request_redraw();
             }
             WinitEvent::WindowEvent { ref event, window_id, .. } if window_id == window.id() => {
