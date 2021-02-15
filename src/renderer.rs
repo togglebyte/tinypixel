@@ -268,17 +268,17 @@ impl State {
         self.size = new_size;
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
-
+        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+        
         let texture = texture::Texture::blue(
             &self.device,
             &self.queue,
-            ScreenSize::new(self.size.width, self.size.height),
+            ScreenSize::new(new_size.width, new_size.height),
         );
 
         self.diffuse_bind_group = bind_group(&self.device, &texture);
         self.texture = texture;
 
-        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
     fn render(&mut self) {
@@ -291,7 +291,7 @@ impl State {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("I haz label"),
+                label: None,
             });
 
         {
