@@ -89,9 +89,7 @@ impl Renderer {
         }
         pixels.into_iter().for_each(|(pix, pos)| {
             let index = self.coords_to_index(pos);
-            if index < self.pixels.inner.len() {
-                self.pixels.inner[index] = pix;
-            }
+            self.pixels.inner[index] = pix;
         });
     }
 
