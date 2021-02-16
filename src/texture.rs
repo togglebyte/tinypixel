@@ -10,8 +10,13 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn blue(device: &wgpu::Device, queue: &wgpu::Queue, size: crate::ScreenSize) -> Texture {
-        let pixels = PixelBuffer::with_capacity((size.width * size.height) as usize);
+
+    pub fn empty(device: &wgpu::Device, queue: &wgpu::Queue, size: crate::ScreenSize) -> Texture {
+        let pixels = PixelBuffer::new((size.width * size.height) as usize, Pixel::zero());
+        Self::new(&pixels, device, queue, size)
+    }
+
+    pub fn new(pixels: &[u8], device: &wgpu::Device, queue: &wgpu::Queue, size: crate::ScreenSize) -> Texture {
 
         let size = wgpu::Extent3d {
             width: size.width,

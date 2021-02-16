@@ -2,12 +2,9 @@ use std::mem::size_of;
 
 use futures::executor::block_on;
 use wgpu::util::DeviceExt;
-use winit::{
-    dpi::PhysicalSize,
-    window::Window,
-};
+use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{texture, Pixel, ScreenSize, Viewport};
+use crate::{texture, Pixel, PixelBuffer, ScreenPos, ScreenSize, Viewport};
 
 // -----------------------------------------------------------------------------
 //     - Vertex-
@@ -77,17 +74,35 @@ const INDICES: &[u16] = &[0, 2, 3, 0, 3, 1];
 // -----------------------------------------------------------------------------
 pub struct Renderer {
     state: State,
+    pixels: PixelBuffer,
 }
 
 impl Renderer {
-    pub fn draw(&mut self, viewport: &Viewport) {
+    fn coords_to_index(&self, pos: ScreenPos) -> usize {
+        (pos.x + pos.y * self.state.size.width) as usize
+    }
+
+    pub fn draw(&mut self, viewport: &mut Viewport) {
+        let pixels = viewport.pixels();
+        if pixels.len() > 0 {
+            eprintln!("{:?}", pixels.len());
+        }
+        pixels.into_iter().for_each(|(pix, pos)| {
+            let index = self.coords_to_index(pos);
+            if index < self.pixels.inner.len() {
+                self.pixels.inner[index] = pix;
+            }
+        });
+    }
+
+    pub fn render(&mut self) {
         self.state.queue.write_texture(
             wgpu::TextureCopyView {
                 texture: &self.state.texture.inner,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            viewport.pixels(),
+            &self.pixels,
             wgpu::TextureDataLayout {
                 offset: 0,
                 bytes_per_row: size_of::<Pixel>() as u32 * self.state.size.width,
@@ -95,19 +110,24 @@ impl Renderer {
             },
             self.state.texture.size,
         );
-    }
-
-    pub fn render(&mut self) {
         self.state.render();
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        let cap = new_size.width * new_size.height;
+        let pixels = PixelBuffer::new(cap as usize, Pixel::zero());
+        self.pixels = pixels;
         self.state.resize(new_size);
     }
 
     pub fn new(window: &Window) -> Self {
+        let size = window.inner_size();
+        let cap = size.width * size.height;
+        let pixels = PixelBuffer::new(cap as usize, Pixel::zero());
+
         Self {
             state: block_on(State::new(window)),
+            pixels,
         }
     }
 }
@@ -212,7 +232,7 @@ impl State {
         //     - Texture -
         // -----------------------------------------------------------------------------
         let texture =
-            texture::Texture::blue(&device, &queue, ScreenSize::new(size.width, size.height));
+            texture::Texture::empty(&device, &queue, ScreenSize::new(size.width, size.height));
 
         let texture_bind_group_layout = bind_group_layout(&device);
 
@@ -269,16 +289,16 @@ impl State {
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
-        
-        let texture = texture::Texture::blue(
+
+        let texture = texture::Texture::empty(
             &self.device,
             &self.queue,
             ScreenSize::new(new_size.width, new_size.height),
         );
 
         self.diffuse_bind_group = bind_group(&self.device, &texture);
-        self.texture = texture;
 
+        self.texture = texture;
     }
 
     fn render(&mut self) {
@@ -290,34 +310,32 @@ impl State {
 
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: None,
-            });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: None,
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                attachment: &frame.view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..));
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-        }
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..));
+        render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+
+        drop(render_pass);
 
         self.queue.submit(std::iter::once(encoder.finish()));
     }

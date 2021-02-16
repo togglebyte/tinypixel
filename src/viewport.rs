@@ -11,7 +11,9 @@ pub struct Viewport {
     /// The size of the viewport. Should probably match the size of the camera
     /// that is used with this viewport.
     pub size: ScreenSize,
-    buf: PixelBuffer,
+    pub new_buf: PixelBuffer,
+    old_buf: PixelBuffer,
+    scale_factor: u32,
 }
 
 impl Viewport {
@@ -20,7 +22,9 @@ impl Viewport {
         Self {
             position,
             size,
-            buf: PixelBuffer::with_capacity((size.width * size.height) as usize),
+            new_buf: PixelBuffer::empty((size.width * size.height) as usize),
+            old_buf: PixelBuffer::empty((size.width * size.height) as usize),
+            scale_factor: 1,
         }
     }
 
@@ -29,7 +33,8 @@ impl Viewport {
     /// characters might remain.
     pub fn resize(&mut self, new_size: ScreenSize) {
         self.size = ScreenSize::new(new_size.width, new_size.height);
-        self.buf = PixelBuffer::with_capacity((new_size.width * new_size.height) as usize);
+        self.new_buf = PixelBuffer::empty((new_size.width * new_size.height) as usize);
+        self.old_buf = PixelBuffer::empty((new_size.width * new_size.height) as usize);
     }
 
     /// Draw the pixels onto the renderable surface layers.
@@ -44,9 +49,23 @@ impl Viewport {
     /// This is called from `draw_pixels` for each pixel.
     pub fn draw_pixel(&mut self, pixel: Pixel, pos: ScreenPos) {
         if self.in_view(pos) {
-            let index = self.size.width * pos.y + pos.x;
-            self.buf.set_pixel(index as usize, pixel);
+            for x in 0..self.scale_factor {
+                for y in 0..self.scale_factor {
+                    let index = self.size.width * (pos.y + y) + pos.x + x;
+                    self.new_buf.set_pixel(index as usize, pixel);
+                }
+            }
         }
+    }
+
+    /// Fill the entire viewport with one colour
+    pub fn fill(&mut self, pixel: Pixel) {
+        self.new_buf.inner.iter_mut().for_each(|p| *p = pixel);
+    }
+
+    /// Set the scale factor
+    pub fn scale(&mut self, scale_factor: u32) {
+        self.scale_factor = scale_factor;
     }
 
     fn in_view(&self, pos: ScreenPos) -> bool {
@@ -57,38 +76,42 @@ impl Viewport {
         ScreenPos::new(pos.x + self.position.x, pos.y + self.position.y)
     }
 
-    pub(crate) fn pixels(&self) -> &PixelBuffer {
-        &self.buf
-        // let mut pixels = PixelBuffer::with_capacity(self.width * self.height);
+    fn index_to_coords(&self, index: usize) -> ScreenPos {
+        let x = index as u32 % self.size.width;
+        let y = index as u32 / self.size.width;
 
-        // for (new, old) in self
-        //     .new_buf
-        //     .pixels
-        //     .iter()
-        //     .enumerate()
-        //     .zip(&self.old_buf.pixels)
-        // {
-        //     match (new, old) {
-        //         ((index, Some(pixel)), _) => {
-        //             let pos = self.offset(self.new_buf.index_to_coords(index));
-        //             let mut pixel = *pixel;
-        //             pixel.pos = pos;
-        //             pixels.push(pixel);
-        //         }
-        //         ((index, None), Some(_)) => {
-        //             let pos = self.offset(self.new_buf.index_to_coords(index));
-        //             pixels.push(Pixel::white(' ', pos));
-        //         }
-        //         ((_, None), None) => {}
-        //     }
-        // }
+        ScreenPos::new(x, y)
+    }
 
-        // swap(&mut self.new_buf, &mut self.old_buf);
-        // self.new_buf.pixels.iter_mut().for_each(|opt| {
-        //     opt.take();
-        // });
+    pub(crate) fn pixels(&mut self) -> Vec<(Pixel, ScreenPos)> {
+        let mut pixels = Vec::new();
 
-        // pixels
+        for (new, old) in self
+            .new_buf
+            .inner
+            .iter()
+            .enumerate()
+            .zip(&self.old_buf.inner)
+        {
+            match (new, old) {
+                ((_, new), old) if new == old => {}
+                ((index, Pixel { a: 0, .. }), old_pixel) => {
+                    if old_pixel.a > 0 {
+                        let pos = self.offset(self.index_to_coords(index));
+                        pixels.push((Pixel::zero(), pos));
+                    }
+                }
+                ((index, pixel), _) => {
+                    let pos = self.offset(self.index_to_coords(index));
+                    pixels.push((*pixel, pos));
+                }
+            }
+        }
+
+        swap(&mut self.new_buf, &mut self.old_buf);
+        self.new_buf.zero();
+
+        pixels
     }
 }
 
